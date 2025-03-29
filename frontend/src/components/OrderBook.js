@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
   Box, 
   Typography, 
@@ -9,154 +9,343 @@ import {
   TableHead, 
   TableRow,
   Paper,
-  Divider,
   useTheme
 } from '@mui/material';
 
-const OrderBook = ({ depth }) => {
+const OrderBook = ({ depth = { bids: [], asks: [] } }) => {
   const theme = useTheme();
-
-  const formattedData = useMemo(() => {
-    if (!depth || !depth.bids || !depth.asks) return { bids: [], asks: [] };
-
-    // Find the maximum quantity to scale the depth visualization
-    const allQuantities = [...depth.bids, ...depth.asks].map(level => level.quantity);
-    const maxQuantity = Math.max(...allQuantities, 1);
-    
-    // Format and add visualization data
-    return {
-      bids: depth.bids.map(bid => ({
-        ...bid,
-        total: bid.price * bid.quantity,
-        percentOfMax: (bid.quantity / maxQuantity) * 100
-      })),
-      asks: depth.asks.map(ask => ({
-        ...ask,
-        total: ask.price * ask.quantity,
-        percentOfMax: (ask.quantity / maxQuantity) * 100
-      }))
-    };
+  const [maxQuantity, setMaxQuantity] = useState(0);
+  const [error, setError] = useState(null);
+  
+  // Calculate max quantity for visualization
+  useEffect(() => {
+    try {
+      if (!depth) return;
+      
+      const bids = Array.isArray(depth.bids) ? depth.bids : [];
+      const asks = Array.isArray(depth.asks) ? depth.asks : [];
+      
+      if (bids.length === 0 && asks.length === 0) {
+        setMaxQuantity(0);
+        return;
+      }
+      
+      const allQuantities = [
+        ...bids.map(b => parseFloat(b.quantity) || 0),
+        ...asks.map(a => parseFloat(a.quantity) || 0)
+      ];
+      
+      const max = Math.max(...allQuantities.filter(q => !isNaN(q)), 1);
+      setMaxQuantity(max);
+    } catch (err) {
+      console.error("Error processing order book data:", err);
+      setError("Failed to process order book data");
+    }
   }, [depth]);
 
-  const midPrice = useMemo(() => {
-    if (!depth || !depth.bids || !depth.asks || depth.bids.length === 0 || depth.asks.length === 0) return null;
-    const bestBid = depth.bids[0].price;
-    const bestAsk = depth.asks[0].price;
-    return (bestBid + bestAsk) / 2;
-  }, [depth]);
-
-  const formatNumber = (num, decimals = 2) => {
-    if (num === undefined || num === null) return '-';
-    return num.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  // Format price precisely
+  const formatPrice = (price) => {
+    try {
+      const numPrice = parseFloat(price);
+      return isNaN(numPrice) ? '0.00' : numPrice.toFixed(2);
+    } catch (err) {
+      return '0.00';
+    }
   };
 
-  if (!depth) {
+  // Format quantity with compact notation for large numbers
+  const formatQuantity = (quantity) => {
+    try {
+      const numQuantity = parseFloat(quantity);
+      if (isNaN(numQuantity)) return '0.00';
+      
+      if (numQuantity >= 1000000) {
+        return `${(numQuantity / 1000000).toFixed(2)}M`;
+      } else if (numQuantity >= 1000) {
+        return `${(numQuantity / 1000).toFixed(2)}K`;
+      } else {
+        return numQuantity.toFixed(4);
+      }
+    } catch (err) {
+      return '0.00';
+    }
+  };
+
+  // Calculate percent of max quantity for visualization
+  const getPercentOfMax = (quantity) => {
+    if (!maxQuantity) return 0;
+    try {
+      const numQuantity = parseFloat(quantity);
+      if (isNaN(numQuantity)) return 0;
+      return (numQuantity / maxQuantity) * 100;
+    } catch (err) {
+      return 0;
+    }
+  };
+
+  // Sort asks in descending order and bids in descending order
+  const sortedAsks = useMemo(() => {
+    try {
+      if (!depth || !depth.asks || !Array.isArray(depth.asks)) return [];
+      return [...depth.asks]
+        .map(ask => ({
+          ...ask,
+          price: parseFloat(ask.price) || 0,
+          quantity: parseFloat(ask.quantity) || 0
+        }))
+        .sort((a, b) => b.price - a.price);
+    } catch (err) {
+      console.error("Error sorting asks:", err);
+      return [];
+    }
+  }, [depth]);
+  
+  const sortedBids = useMemo(() => {
+    try {
+      if (!depth || !depth.bids || !Array.isArray(depth.bids)) return [];
+      return [...depth.bids]
+        .map(bid => ({
+          ...bid,
+          price: parseFloat(bid.price) || 0,
+          quantity: parseFloat(bid.quantity) || 0
+        }))
+        .sort((a, b) => b.price - a.price);
+    } catch (err) {
+      console.error("Error sorting bids:", err);
+      return [];
+    }
+  }, [depth]);
+
+  // Calculate spread
+  const spreadData = useMemo(() => {
+    if (sortedAsks.length === 0 || sortedBids.length === 0) return null;
+    
+    const lowestAsk = sortedAsks[sortedAsks.length - 1].price;
+    const highestBid = sortedBids[0].price;
+    const spread = lowestAsk - highestBid;
+    const percentSpread = ((lowestAsk / highestBid) - 1) * 100;
+    
+    return {
+      spread: spread,
+      percentSpread: percentSpread
+    };
+  }, [sortedAsks, sortedBids]);
+
+  if (error) {
     return (
-      <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Typography variant="body1" color="text.secondary">
-          Loading order book...
-        </Typography>
+      <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Typography color="error">{error}</Typography>
+      </Box>
+    );
+  }
+
+  if (!sortedAsks.length && !sortedBids.length) {
+    return (
+      <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Typography>No order book data available</Typography>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" component="div" gutterBottom>
-        Order Book
-      </Typography>
-      
-      {midPrice && (
-        <Box sx={{ textAlign: 'center', mb: 1 }}>
-          <Typography variant="h5" component="div" color="text.primary">
-            {formatNumber(midPrice, 2)}
-          </Typography>
-        </Box>
-      )}
-      
-      <Divider sx={{ my: 1 }} />
-      
-      <Box sx={{ display: 'flex', height: 'calc(100% - 80px)' }}>
-        {/* Asks (Sell orders) - displayed in reverse order (highest to lowest) */}
-        <TableContainer component={Paper} elevation={0} sx={{ flex: 1, maxHeight: '100%', bgcolor: 'transparent' }}>
+    <Box className="flex-fix" sx={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+        {/* Asks container - top section */}
+        <TableContainer 
+          component={Paper} 
+          elevation={0} 
+          sx={{ 
+            flex: '1 1 auto',
+            minHeight: 0,
+            maxHeight: '45%', 
+            overflow: 'auto',
+            bgcolor: 'transparent',
+            mb: 1
+          }}
+        >
           <Table size="small" stickyHeader sx={{ tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell align="right">Price</TableCell>
-                <TableCell align="right">Size</TableCell>
-                <TableCell align="right">Total</TableCell>
+                <TableCell width="40%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Price</TableCell>
+                <TableCell width="30%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Qty</TableCell>
+                <TableCell width="30%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Total</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {formattedData.asks.map((ask, index) => (
-                <TableRow key={`ask-${index}`} sx={{ position: 'relative' }}>
-                  <TableCell 
-                    align="right" 
-                    sx={{ color: theme.palette.error.main }}
+              {sortedAsks.map((level, idx) => {
+                const percentOfMax = getPercentOfMax(level.quantity);
+                
+                return (
+                  <TableRow 
+                    key={`ask-${idx}`}
+                    sx={{ 
+                      position: 'relative',
+                      height: '28px',
+                      padding: 0,
+                      '&:hover': { backgroundColor: 'rgba(244, 67, 54, 0.08)' }
+                    }}
                   >
-                    {formatNumber(ask.price, 2)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatNumber(ask.quantity, 4)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatNumber(ask.total, 2)}
-                    <Box 
-                      sx={{ 
+                    {/* Background bar for visualization */}
+                    <Box
+                      sx={{
                         position: 'absolute',
-                        top: 0,
                         right: 0,
+                        top: 0,
                         bottom: 0,
-                        width: `${ask.percentOfMax}%`,
-                        backgroundColor: theme.palette.error.main + '33', // Add transparency
-                        zIndex: -1,
-                      }} 
+                        bgcolor: 'rgba(244, 67, 54, 0.15)',
+                        width: `${Math.min(percentOfMax, 100)}%`,
+                        zIndex: 0
+                      }}
                     />
-                  </TableCell>
-                </TableRow>
-              ))}
+                    
+                    <TableCell 
+                      align="right" 
+                      sx={{ 
+                        color: 'error.main', 
+                        fontWeight: 'medium',
+                        position: 'relative',
+                        zIndex: 1,
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatPrice(level.price)}
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        position: 'relative',
+                        zIndex: 1,
+                        fontFamily: 'monospace',
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatQuantity(level.quantity)}
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        position: 'relative',
+                        zIndex: 1,
+                        color: 'text.secondary',
+                        fontFamily: 'monospace',
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatPrice(level.price * level.quantity)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>
         
-        {/* Bids (Buy orders) */}
-        <TableContainer component={Paper} elevation={0} sx={{ flex: 1, maxHeight: '100%', bgcolor: 'transparent', ml: 1 }}>
+        {/* Spread information */}
+        {spreadData && (
+          <Box 
+            sx={{ 
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              p: 1,
+              borderTop: '1px solid',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'rgba(25, 118, 210, 0.05)'
+            }}
+          >
+            <Typography variant="body2" color="primary">
+              Spread: {formatPrice(spreadData.spread)} ({spreadData.percentSpread.toFixed(2)}%)
+            </Typography>
+          </Box>
+        )}
+        
+        {/* Bids container - bottom section */}
+        <TableContainer 
+          component={Paper} 
+          elevation={0} 
+          sx={{ 
+            flex: '1 1 auto',
+            minHeight: 0,
+            maxHeight: '45%', 
+            overflow: 'auto',
+            bgcolor: 'transparent',
+            mt: 1
+          }}
+        >
           <Table size="small" stickyHeader sx={{ tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell align="right">Price</TableCell>
-                <TableCell align="right">Size</TableCell>
-                <TableCell align="right">Total</TableCell>
+                <TableCell width="40%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Price</TableCell>
+                <TableCell width="30%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Qty</TableCell>
+                <TableCell width="30%" align="right" sx={{ padding: '4px 8px', fontSize: '0.75rem' }}>Total</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {formattedData.bids.map((bid, index) => (
-                <TableRow key={`bid-${index}`} sx={{ position: 'relative' }}>
-                  <TableCell 
-                    align="right" 
-                    sx={{ color: theme.palette.success.main }}
+              {sortedBids.map((level, idx) => {
+                const percentOfMax = getPercentOfMax(level.quantity);
+                
+                return (
+                  <TableRow 
+                    key={`bid-${idx}`}
+                    sx={{ 
+                      position: 'relative',
+                      height: '28px',
+                      padding: 0,
+                      '&:hover': { backgroundColor: 'rgba(76, 175, 80, 0.08)' }
+                    }}
                   >
-                    {formatNumber(bid.price, 2)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatNumber(bid.quantity, 4)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatNumber(bid.total, 2)}
-                    <Box 
-                      sx={{ 
+                    {/* Background bar for visualization */}
+                    <Box
+                      sx={{
                         position: 'absolute',
+                        left: 0,
                         top: 0,
-                        right: 0,
                         bottom: 0,
-                        width: `${bid.percentOfMax}%`,
-                        backgroundColor: theme.palette.success.main + '33', // Add transparency
-                        zIndex: -1,
-                      }} 
+                        bgcolor: 'rgba(76, 175, 80, 0.15)',
+                        width: `${Math.min(percentOfMax, 100)}%`,
+                        zIndex: 0
+                      }}
                     />
-                  </TableCell>
-                </TableRow>
-              ))}
+                    
+                    <TableCell 
+                      align="right" 
+                      sx={{ 
+                        color: 'success.main', 
+                        fontWeight: 'medium',
+                        position: 'relative',
+                        zIndex: 1,
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatPrice(level.price)}
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        position: 'relative',
+                        zIndex: 1,
+                        fontFamily: 'monospace',
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatQuantity(level.quantity)}
+                    </TableCell>
+                    <TableCell 
+                      align="right"
+                      sx={{ 
+                        position: 'relative',
+                        zIndex: 1,
+                        color: 'text.secondary',
+                        fontFamily: 'monospace',
+                        padding: '2px 8px'
+                      }}
+                    >
+                      {formatPrice(level.price * level.quantity)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>

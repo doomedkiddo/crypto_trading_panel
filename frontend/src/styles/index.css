@@ -1,31 +1,123 @@
-body {
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html, body, #root {
   margin: 0;
-  font-family: 'Roboto', 'Segoe UI', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Roboto', 'Segoe UI', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #121212;
-  color: #e0e0e0;
+  background-color: #0f172a;
+  color: #f1f5f9;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* 修复在小屏幕上的布局 */
+@media screen and (max-width: 1200px) {
+  .MuiCard-root {
+    min-height: 0 !important;
+  }
+}
+
+/* 确保组件在小屏幕上不会挤在一起 */
+@media screen and (max-width: 600px) {
+  .MuiBox-root, .MuiCard-root {
+    margin-bottom: 8px;
+  }
+}
+
+/* Animation utilities */
+.pulse {
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: #1e293b;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #424242;
+  background: #475569;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #616161;
+  background: #64748b;
+}
+
+/* Transition utilities */
+.transition-all {
+  transition: all 0.3s ease;
+}
+
+.hover-shadow:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* Glass effect for special panels */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* 确保flexbox布局在所有浏览器中正常工作 */
+.flex-fix {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 确保表格不会破坏布局 */
+table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* 允许表格单元格内容溢出时显示省略号 */
+.MuiTableCell-root {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 } 

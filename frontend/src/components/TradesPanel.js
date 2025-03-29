@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -15,6 +15,16 @@ import { format } from 'date-fns';
 
 const TradesPanel = ({ trades = [] }) => {
   const theme = useTheme();
+
+  // 对交易按时间戳排序，最新的在前面
+  const sortedTrades = useMemo(() => {
+    if (!trades || trades.length === 0) return [];
+    return [...trades].sort((a, b) => {
+      const timestampA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timestampB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timestampB - timestampA; // 降序排列，最新的在前
+    });
+  }, [trades]);
 
   const formatNumber = (num, decimals = 2) => {
     if (num === undefined || num === null) return '-';
@@ -59,7 +69,7 @@ const TradesPanel = ({ trades = [] }) => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {trades.map((trade, index) => (
+            {sortedTrades.map((trade, index) => (
               <TableRow key={trade.trade_id || index}>
                 <TableCell component="th" scope="row">
                   {formatTimestamp(trade.timestamp)}
