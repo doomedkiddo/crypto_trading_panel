@@ -400,6 +400,7 @@ const Dashboard = () => {
                   <PriceChart 
                     data={selectedInstrumentTrades} 
                     instrument={selectedInstrument} 
+                    depth={depth}
                   />
                 </ErrorBoundary>
               </CardContent>
