@@ -1,89 +1,144 @@
-import { useState, useEffect, useCallback } from 'react';
-import useWebSocket from 'react-use-websocket';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-const WS_URL = 'ws://localhost:8000/ws';
-
-// Default empty state to prevent null errors
-const defaultMarketData = {
-  depth: { bids: [], asks: [] },
-  trades: [],
-  positions: [],
-  riskMetrics: {},
-  lastUpdate: null,
-};
-
-export default function useMarketData() {
-  const [marketData, setMarketData] = useState(defaultMarketData);
-  const [connectionStatus, setConnectionStatus] = useState('Connecting');
-
-  // Use try-catch for websocket connection
-  const { lastMessage, sendMessage } = useWebSocket(WS_URL, {
-    onOpen: () => setConnectionStatus('Connected'),
-    onClose: () => setConnectionStatus('Disconnected'),
-    onError: () => {
-      console.error('WebSocket connection error');
-      setConnectionStatus('Error');
-    },
-    shouldReconnect: () => true,
-    reconnectInterval: 3000,
-    reconnectAttempts: 10,
-    // Add a catch handler for websocket errors
-    share: false,
-    retryOnError: true,
+const useMarketData = () => {
+  const [marketData, setMarketData] = useState({
+    trades: [],
+    positions: [],
+    depth: { bids: [], asks: [] },
+    pnlData: [],
+    lastUpdate: null
   });
+  const [connectionStatus, setConnectionStatus] = useState('Connecting');
+  const ws = useRef(null);
+  const reconnectTimeout = useRef(null);
 
-  // Update market data when new messages arrive
-  useEffect(() => {
-    if (lastMessage) {
-      try {
-        const data = JSON.parse(lastMessage.data);
-        
-        if (data && data.type === 'market_update') {
-          // Safely parse data with defaults to prevent null/undefined errors
-          setMarketData({
-            depth: data.depth || { bids: [], asks: [] },
-            trades: Array.isArray(data.trades) ? data.trades.map(trade => ({
-              ...trade,
-              price: parseFloat(trade.price),
-              quantity: parseFloat(trade.quantity)
-            })) : [],
-            positions: Array.isArray(data.positions) ? data.positions.map(position => ({
-              ...position,
-              quantity: parseFloat(position.quantity),
-              entry_price: parseFloat(position.entry_price),
-              current_price: parseFloat(position.current_price),
-              unrealized_pnl: parseFloat(position.unrealized_pnl),
-            })) : [],
-            riskMetrics: data.risk_metrics || {},
-            lastUpdate: new Date(),
-          });
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-        // Don't update state on error to preserve previous valid state
-      }
-    }
-  }, [lastMessage]);
-
-  // Request specific data (currently not needed as server pushes all data)
-  const requestData = useCallback((type) => {
+  // Handle incoming WebSocket messages
+  const handleMessage = useCallback((event) => {
     try {
-      sendMessage(JSON.stringify({ action: 'request', type }));
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  }, [sendMessage]);
+      const data = JSON.parse(event.data);
 
-  // Function to handle data fetching errors
-  const handleError = useCallback((error) => {
-    console.error('Market data error:', error);
-    setConnectionStatus('Error');
+      // Check if there's an error in the response
+      if (data.error) {
+        console.error('Server error:', data.error);
+        return;
+      }
+
+      // Update market data with the received data
+      setMarketData(prevData => ({
+        trades: data.trades || prevData.trades,
+        positions: data.positions || prevData.positions,
+        depth: data.depth || prevData.depth,
+        pnlData: data.pnlData || prevData.pnlData,
+        lastUpdate: data.lastUpdate ? new Date(data.lastUpdate) : new Date()
+      }));
+
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
+    }
   }, []);
+
+  // Handle WebSocket connection status changes
+  const handleConnectionChange = useCallback((status) => {
+    setConnectionStatus(status);
+  }, []);
+
+  // Connect to WebSocket server
+  const connect = useCallback(() => {
+    try {
+      // Clear any existing reconnection timeout
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+      }
+
+      // Create new WebSocket connection
+      ws.current = new WebSocket('ws://localhost:8765');
+
+      ws.current.onopen = () => {
+        handleConnectionChange('Connected');
+        console.log('WebSocket connected');
+      };
+
+      ws.current.onclose = () => {
+        handleConnectionChange('Disconnected');
+        console.log('WebSocket disconnected');
+
+        // Attempt to reconnect after 5 seconds
+        reconnectTimeout.current = setTimeout(() => {
+          console.log('Attempting to reconnect...');
+          connect();
+        }, 5000);
+      };
+
+      ws.current.onerror = (error) => {
+        handleConnectionChange('Error');
+        console.error('WebSocket error:', error);
+      };
+
+      ws.current.onmessage = handleMessage;
+    } catch (error) {
+      console.error('Error connecting to WebSocket:', error);
+      handleConnectionChange('Error');
+    }
+  }, [handleMessage, handleConnectionChange]);
+
+  // Initialize WebSocket connection
+  useEffect(() => {
+    connect();
+
+    // Cleanup on unmount
+    return () => {
+      if (ws.current) {
+        ws.current.close();
+      }
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+      }
+    };
+  }, [connect]);
+
+  // Subscribe to specific data channels
+  const subscribe = useCallback((channels) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'subscribe',
+        channels: channels
+      }));
+    }
+  }, []);
+
+  // Unsubscribe from specific data channels
+  const unsubscribe = useCallback((channels) => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'unsubscribe',
+        channels: channels
+      }));
+    }
+  }, []);
+
+  // Subscribe to all channels when connection is established
+  useEffect(() => {
+    if (connectionStatus === 'Connected') {
+      subscribe(['trades', 'positions', 'depth', 'pnl']);
+    }
+  }, [connectionStatus, subscribe]);
+
+  // Debug logging for market data updates
+  useEffect(() => {
+    console.log('Market data updated:', {
+      tradesCount: marketData.trades.length,
+      positionsCount: marketData.positions.length,
+      pnlDataCount: marketData.pnlData.length,
+      lastUpdate: marketData.lastUpdate
+    });
+  }, [marketData]);
 
   return {
     marketData,
     connectionStatus,
-    requestData,
-    handleError,
+    subscribe,
+    unsubscribe
   };
-} 
+};
+
+export default useMarketData;

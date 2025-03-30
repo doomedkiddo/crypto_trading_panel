@@ -2,7 +2,11 @@ import React from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import RiskMetricsPage from './pages/RiskMetrics';
+import MarketRiskPage from './pages/MarketRisk';
+import EnhancedRiskMetricsPage from './pages/EnhancedRiskMetrics';
 
 // Create a theme instance with dark mode
 const darkTheme = createTheme({
@@ -124,7 +128,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={darkTheme}>
         <CssBaseline />
-        <Dashboard />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/risk" element={<RiskMetricsPage />} />
+            <Route path="/enhanced-risk" element={<EnhancedRiskMetricsPage />} />
+            <Route path="/market-risk" element={<MarketRiskPage />} />
+          </Routes>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   );

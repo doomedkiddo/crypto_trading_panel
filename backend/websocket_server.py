@@ -6,153 +6,138 @@ import mmap
 import ctypes
 from ctypes import Structure, c_double, c_uint64, c_char, c_bool
 import websockets
+import random
+from datetime import datetime, timedelta
 
-# Define data structures matching C++ shared memory layout
-class PriceLevel(Structure):
-    _fields_ = [
-        ("price", c_double),
-        ("quantity", c_double)
-    ]
-
-class DepthData(Structure):
-    _fields_ = [
-        ("exchange_ts", c_uint64),
-        ("local_ts", c_uint64),
-        ("bids", PriceLevel * 10),
-        ("asks", PriceLevel * 10)
-    ]
-
-class PublicTrade(Structure):
-    _fields_ = [
-        ("price", c_double),
-        ("quantity", c_double),
-        ("exchange_ts", c_uint64),
-        ("local_ts", c_uint64),
-        ("trade_id", c_char * 32),
-        ("is_buyer_maker", c_bool)
-    ]
-
-# Shared memory config
-SHM_MOUNT_POINT = "/dev/shm"
-SHM_DIRECTORY = "okx_market_data"
-INSTRUMENT = "BTC-USDT"  # Default instrument
-
-def get_shm_name(instrument):
-    name = instrument.replace('-', '_')
-    return f"OKX_{name}"
-
-def get_shm_path(shm_name):
-    return f"{SHM_MOUNT_POINT}/{SHM_DIRECTORY}/{shm_name}"
-
-async def read_market_data(instrument=INSTRUMENT):
-    """Read market data from shared memory for specified instrument"""
-    try:
-        shm_name = get_shm_name(instrument)
-        shm_path = get_shm_path(shm_name)
-        
-        if not os.path.exists(shm_path):
-            return {"error": f"Shared memory not found for {instrument}"}
-        
-        with open(shm_path, "rb") as f:
-            mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-            
-            # Read depth data
-            mm.seek(0)
-            depth_size = ctypes.sizeof(DepthData)
-            depth_bytes = mm.read(depth_size)
-            depth = DepthData.from_buffer_copy(depth_bytes)
-            
-            # Process depth data
-            depth_data = {
-                "timestamp": depth.exchange_ts,
-                "bids": [{"price": level.price, "quantity": level.quantity} 
-                         for level in depth.bids if level.price > 0],
-                "asks": [{"price": level.price, "quantity": level.quantity} 
-                         for level in depth.asks if level.price > 0]
+# Mock data generator
+class MockDataGenerator:
+    def __init__(self):
+        self.base_price = 45000.0
+        self.base_pnl = 10000.0
+        self.positions = [
+            {
+                "instrument": "BTC-USDT",
+                "quantity": 1.5,
+                "entryPrice": 44000.0,
+                "markPrice": 45000.0,
+                "unrealizedPnl": 1500.0,
+                "notional": 67500.0,
+                "marginRatio": 0.1,
+                "liquidationPrice": 40000.0
+            },
+            {
+                "instrument": "ETH-USDT",
+                "quantity": -10,
+                "entryPrice": 2200.0,
+                "markPrice": 2150.0,
+                "unrealizedPnl": 500.0,
+                "notional": 21500.0,
+                "marginRatio": 0.15,
+                "liquidationPrice": 2500.0
             }
-            
-            # Read recent trades
-            trade_size = ctypes.sizeof(PublicTrade)
-            trades = []
-            
-            # Read last 10 trades
-            for i in range(10):
-                try:
-                    mm.seek(depth_size + i * trade_size)
-                    trade_bytes = mm.read(trade_size)
-                    trade = PublicTrade.from_buffer_copy(trade_bytes)
-                    
-                    # Skip empty/invalid trades
-                    if trade.price <= 0 or trade.quantity <= 0:
-                        continue
-                        
-                    trade_id = bytes(trade.trade_id).split(b'\0', 1)[0].decode('utf-8', errors='ignore')
-                    
-                    trades.append({
-                        "price": trade.price,
-                        "quantity": trade.quantity,
-                        "timestamp": trade.exchange_ts,
-                        "is_buyer_maker": bool(trade.is_buyer_maker)
-                    })
-                except:
-                    break
-            
-            mm.close()
-            
-            return {
-                "depth": depth_data,
-                "trades": trades
-            }
-            
-    except Exception as e:
-        return {"error": str(e)}
+        ]
+        self.trades = []
+        self.pnl_history = []
+        self.last_update = datetime.now()
+        self.volatility = 0.001  # 0.1% volatility
 
-async def market_data_handler(websocket):
-    """Handle WebSocket connection and send market data updates"""
-    instrument = INSTRUMENT
-    try:
-        async for message in websocket:
-            # Allow client to specify instrument
-            try:
-                data = json.loads(message)
-                if "instrument" in data:
-                    instrument = data["instrument"]
-            except:
-                pass
-                
-            # Read and send market data
-            market_data = await read_market_data(instrument)
-            await websocket.send(json.dumps(market_data))
-            
-    except websockets.exceptions.ConnectionClosed:
-        pass
+    def generate_mock_depth(self):
+        center_price = self.base_price
+        bids = []
+        asks = []
 
-async def websocket_server():
-    """Start WebSocket server"""
-    host = "0.0.0.0"
-    port = 8765
-    
-    print(f"Starting WebSocket server on {host}:{port}")
-    async with websockets.serve(market_data_handler, host, port):
-        await asyncio.Future()  # Run forever
+        # Generate 10 levels of bids and asks
+        for i in range(10):
+            bid_price = center_price * (1 - 0.001 * (i + 1))
+            ask_price = center_price * (1 + 0.001 * (i + 1))
+            quantity = random.uniform(0.1, 2.0)
+
+            bids.append({"price": bid_price, "quantity": quantity})
+            asks.append({"price": ask_price, "quantity": quantity})
+
+        return {
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "bids": bids,
+            "asks": asks
+        }
+
+    def generate_mock_trade(self):
+        side = random.choice(['buy', 'sell'])
+        price = self.base_price * (1 + random.gauss(0, self.volatility))
+        quantity = random.uniform(0.1, 1.0)
+
+        return {
+            "price": price,
+            "quantity": quantity,
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "is_buyer_maker": side == 'sell'
+        }
+
+    def update_mock_data(self):
+        # Update base price with random walk
+        self.base_price *= (1 + random.gauss(0, self.volatility))
+
+        # Update positions
+        for position in self.positions:
+            position["markPrice"] *= (1 + random.gauss(0, self.volatility))
+            price_diff = position["markPrice"] - position["entryPrice"]
+            position["unrealizedPnl"] = price_diff * position["quantity"]
+            position["notional"] = abs(position["quantity"] * position["markPrice"])
+
+        # Generate new trade
+        if random.random() < 0.3:  # 30% chance to generate a new trade
+            new_trade = self.generate_mock_trade()
+            self.trades.insert(0, new_trade)
+            self.trades = self.trades[:100]  # Keep only last 100 trades
+
+        # Update PnL
+        self.base_pnl += random.gauss(0, 100)  # Random PnL changes
+        current_time = datetime.now()
+
+        # Add new PnL data point every second
+        if (current_time - self.last_update).total_seconds() >= 1:
+            self.pnl_history.append({
+                "timestamp": current_time.isoformat(),
+                "value": self.base_pnl
+            })
+            self.last_update = current_time
+
+        # Keep last 100 PnL data points
+        self.pnl_history = self.pnl_history[-100:]
+
+        return {
+            "depth": self.generate_mock_depth(),
+            "trades": self.trades,
+            "positions": self.positions,
+            "pnlData": self.pnl_history,
+            "lastUpdate": datetime.now().isoformat()
+        }
+
+# Create mock data generator instance
+mock_generator = MockDataGenerator()
 
 async def data_broadcast():
     """Broadcast market data updates to all connected clients"""
     connected = set()
-    
+
     async def register(websocket):
         connected.add(websocket)
         try:
             await websocket.wait_closed()
         finally:
             connected.remove(websocket)
-    
+
     async with websockets.serve(register, "0.0.0.0", 8765):
         while True:
-            market_data = await read_market_data()
+            market_data = mock_generator.update_mock_data()
             websockets.broadcast(connected, json.dumps(market_data))
             await asyncio.sleep(0.1)  # Update 10 times per second
 
 if __name__ == "__main__":
-    # Use the broadcast mode for real-time updates
-    asyncio.run(data_broadcast()) 
+    print("Starting WebSocket server on 0.0.0.0:8765")
+    try:
+        asyncio.run(data_broadcast())
+    except KeyboardInterrupt:
+        print("\nServer stopped by user")
+    except Exception as e:
+        print(f"Server error: {e}")

@@ -148,16 +148,16 @@ cleanup() {
     kill $backend_pid
     echo -e "${GREEN}Backend server stopped.${NC}"
   fi
-  
+
   # Kill frontend
   if ps -p $frontend_pid > /dev/null; then
     kill $frontend_pid
     echo -e "${GREEN}Frontend server stopped.${NC}"
   fi
-  
+
   # Remove PID file
   rm -f "$SCRIPT_DIR/.running_pids"
-  
+
   echo -e "${GREEN}Crypto Trading Panel stopped.${NC}"
   exit 0
 }
@@ -167,4 +167,4 @@ trap cleanup INT
 # Keep script running until user presses Ctrl+C
 while true; do
   sleep 1
-done 
+done
